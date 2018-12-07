@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Game of Life - <a href="https://github.com/nerdkid93/wasm-intro">Christopher M. Beam</a></title>
+		<link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+	</head>
+	<style>
+		html, body {
+			margin: 0;
+			width: 100%;
+			height: 100%;
+			background: #eee;
+			font-family: 'Roboto', 'Noto', sans-serif;
+		}
+		#column {
+			width: 100%;
+			height: 100%;
+			display: flex;
+			align-items: center;
+			flex-direction: column;
+		}
+		#column > header {
+			display: flex;
+		}
+		#column > footer {
+			font-size: 0.8em;
+			bottom: 0;
+			margin: 8px;
+			position: absolute;
+		}
+		#canvas {
+			image-rendering: pixelated;
+			border: 2px solid #333;
+			background: #fff;
+		}
+		button {
+			color: #000;
+			margin: 16px 8px;
+			padding: 8px;
+			border: none;
+			border-radius: 4px;
+		}
+		button:active {
+			filter: brightness(75%);
+		}
+		button:focus {
+			outline: 0;
+			box-shadow: 0 4px 5px 0 rgba(0,0,0,0.14),0 1px 10px 0 rgba(0,0,0,0.12),0 2px 4px -1px rgba(0,0,0,0.4);
+		}
+		label {
+			font-size: 0.8em;
+			color: #666;
+		}
+		#input {
+			width: 400px;
+			margin: 4px;
+			padding: 4px;
+			border: 1px solid #000;
+			border-radius: 4px;
+		}
+	</style>
+	<body>
+		<div id="column">
+			<header>
+				<a href="https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life" title="Wikipedia" target="_blank"><h1>Conway's <i>Game of Life</i></h1></a>
+			</header>
+			<canvas id="canvas" title="Animated in WebAssembly (wasm)"></canvas>
+			<div>
+				<button id="toggle" onclick="toggleState()" style="background-color:#F44336;">Stop</button>
+				<button onclick="reset()" style="background-color:#FFEB3B;">Reset Game of Life</button>
+			</div>
+			<div style="text-align:center;">
+				<label>CSV list of starting values<br>
+					<input id="input" onchange="init()" type="text" value="85,86,87,120,132,800,720,700,600,601,602,603,604,605,606">
+				</label>
+			</div>
+			<footer>
+				<a href="https://github.com/nerdkid93/wasm-intro">Christopher M. Beam</a> &copy; 2017 | From <a href="https://codelabs.developers.google.com/codelabs/web-assembly-intro">Google CodeLabs</a>
+			</footer>
+		</div>
+	</body>
+	<script>
+		'use strict';
+
+		// init variables
+		let exports, stop = false;
+		const canvas = document.getElementById('canvas'), input = document.getElementById('input'), toggle = document.getElementById('toggle');
+		const dim = 100;
+		const memory = new WebAssembly.Memory({initial: 256, maximum: 256});
+		const env = {
+			'abortStackOverflow': () => { throw new Error('overflow'); },
+			'table': new WebAssembly.Table({initial: 0, maximum: 0, element: 'anyfunc'}),
+			'tableBase': 0,
+			'__table_base': 0,
+			'memory': memory,
+			'memoryBase': 1024,
+			'__memory_base': 1024,
+			'STACKTOP': 0,
+			'STACK_MAX': memory.buffer.byteLength,
+		};
+
+		// define functions
+		async function createWebAssembly(path, importObject) {
+			const bytes = await window.fetch(path).then(x => x.arrayBuffer());
+			return WebAssembly.instantiate(bytes, importObject);
+		}
+		function init() {
+			exports._board_init();
+			const buff = getBoardBuffer(), len = buff.length, str = input.value;
+			let arr = str.split(',');
+			for (let i = 0, l = arr.length; i < l; i++) if (!isNaN(Number(arr[i])) && Number(arr[i]) < len) buff[Number(arr[i])] = 255;
+			toggleState(false);
+		}
+		function getBoardBuffer() {
+			return new Uint8Array(memory.buffer, exports._board_ref());
+		}
+		function draw() {
+			if (!stop) requestAnimationFrame(draw)
+			const buffer = getBoardBuffer();
+			canvas.width = canvas.height = dim + 2;
+			canvas.style.width = canvas.style.height = `${(dim+2)*5}px`;
+			const data = new ImageData(canvas.width, canvas.height);
+			for (var x = 1; x <= dim; ++x) {
+				for (var y = 1; y <= dim; ++y) {
+					var pos = (y * (dim + 2)) + x;
+					var i = (pos / 8) << 0;
+					var off = 1 << (pos % 8);
+					var alive = (buffer[i] & off);
+					if (!alive) { continue; }
+					const doff = (y * canvas.width + x) * 4;
+					data.data[doff+0] = 255;
+					data.data[doff+3] = 255;
+				}
+			}
+			canvas.getContext('2d').putImageData(data, 0, 0);
+			exports._board_step();
+		}
+		function reset() {
+			if (exports && exports._board_init) {
+				exports._board_init();
+				stop = false;
+				init();
+			}
+		}
+		function toggleState(val) {
+			if (val === undefined) stop = !stop;
+			else stop = !!val;
+
+			if (!stop) {
+				toggle.innerHTML = 'Stop';
+				toggle.style.backgroundColor = '#F44336';
+				draw();
+			} else {
+				toggle.innerHTML = 'Start';
+				toggle.style.backgroundColor = '#00C853';
+			}
+		}
+
+		// run program automatically
+		createWebAssembly('output.wasm', { env }).then(wa => {
+			exports = wa.instance.exports;
+			exports._board_init();
+			init();
+		}).catch(err => alert('Couldn\'t load wasm file. Sorry. ' + err.message));
+	</script>
+</html>

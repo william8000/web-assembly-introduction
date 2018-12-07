@@ -1,8 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<body>
+<canvas id="canvas" style="image-rendering: pixelated; border: 2px solid blue;"></canvas>
+</body>
+
 <script>
+  window.onload = init;
   async function createWebAssembly(path, importObject) {
-    const result = await window.fetch(path);
-    const bytes = await result.arrayBuffer();
-    return WebAssembly.instantiate(bytes, importObject);
+    try {
+      const result = await window.fetch(path);
+      const bytes = await result.arrayBuffer();
+      return WebAssembly.instantiate(bytes, importObject);
+    }
+    catch (err) {
+      console.info('createWebAssembly failed: ' + err.message);
+      return null;
+    }
   }
 
   const memory = new WebAssembly.Memory({initial: 256, maximum: 256});
@@ -12,20 +27,22 @@
     const env = {
       'abortStackOverflow': () => { throw new Error('overflow'); },
       'table': new WebAssembly.Table({initial: 0, maximum: 0, element: 'anyfunc'}),
+      '__table_base': 0,
       'tableBase': 0,
       'memory': memory,
+      '__memory_base': 1024,
       'memoryBase': 1024,
       'STACKTOP': 0,
       'STACK_MAX': memory.buffer.byteLength,
     };
     const importObject = {env};
 
-    const wa = await createWebAssembly('output.wasm', importObject);
-    exports = wa.instance.exports;
-    console.info('got exports', exports);
-    exports._board_init();  // setup lyff board
-
-    draw();
+    createWebAssembly('output.wasm', importObject).then(wa => {
+      exports = wa.instance.exports;
+      console.info('got exports', exports);
+      exports._board_init();  // setup lyff board
+      draw();
+    }).catch(err => alert('Couldn\'t load wasm file. ' + err.message));
  
     canvas.onclick = (ev) => {
       exports._board_step();
@@ -63,12 +80,6 @@
   }
   
 </script>
-<style>
-  canvas {
-    image-rendering: pixelated;
-    border: 2px solid green;
-  }
-</style>
+</head>
 
-<canvas id="canvas">
-</canvas>
+</html>
